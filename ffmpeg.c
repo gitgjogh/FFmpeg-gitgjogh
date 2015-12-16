@@ -3580,6 +3580,29 @@ static int get_input_packet_mt(InputFile *f, AVPacket *pkt)
                                         f->non_blocking ?
                                         AV_THREAD_MESSAGE_NONBLOCK : 0);
 }
+
+
+static int peek_input_packet_for_dts_mt(InputFile *f, int64_t next_dts, int64_t pkt_dts)
+{
+    //av_thread_message_queue_alloc(&f->in_thread_queue, f->thread_queue_size, sizeof(AVPacket));
+    AVFifoBuffer *fifo = av_fifo_alloc(f->thread_queue_size * sizeof(AVPacket));
+    if (!fifo) {
+        av_log(NULL, AV_LOG_ERROR, "%s failed.\n", __FUNCTION__);
+        return AVERROR(-1);
+    }
+
+    av_log(NULL, AV_LOG_WARNING, "space=%d\n", av_fifo_space(fifo));
+
+    av_thread_message_queue_peek(f->in_thread_queue, fifo, 
+                                 f->non_blocking ? 
+                                 AV_THREAD_MESSAGE_NONBLOCK : 0);
+
+    av_log(NULL, AV_LOG_WARNING, "peek n=%d.\n", av_fifo_size(fifo));
+
+    av_fifo_freep(&fifo);
+
+    return 0;
+}
 #endif
 
 static int get_input_packet(InputFile *f, AVPacket *pkt)

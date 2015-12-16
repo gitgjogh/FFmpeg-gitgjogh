@@ -127,6 +127,41 @@ static int av_thread_message_queue_recv_locked(AVThreadMessageQueue *mq,
     return 0;
 }
 
+static int av_thread_message_queue_peek_locked(AVThreadMessageQueue *mq,
+                                               AVFifoBuffer *fifo,
+                                               unsigned flags)
+{
+    int ret = 0;
+    while (!mq->err_recv && av_fifo_size(mq->fifo) < mq->elsize) {
+        if ((flags & AV_THREAD_MESSAGE_NONBLOCK))
+            return AVERROR(EAGAIN);
+        pthread_cond_wait(&mq->cond, &mq->lock);
+    }
+    if (av_fifo_size(mq->fifo) < mq->elsize) {
+        av_log(NULL, AV_LOG_ERROR, "av_fifo_size(mq->fifo) < mq->elsize\n");
+        return mq->err_recv;
+    }
+
+    if (av_fifo_space(fifo) < av_fifo_size(mq->fifo)) {
+        av_log(NULL, AV_LOG_WARNING, "av_fifo_grow()\n");
+        ret = av_fifo_grow(fifo, av_fifo_size(mq->fifo) - av_fifo_size(fifo));
+        if (ret < 0)
+            return ret;
+    }
+
+    for (int base = 0; base < av_fifo_size(mq->fifo); base += mq->elsize) {
+        void *src = av_fifo_peek2(mq->fifo, base);
+        ret = av_fifo_generic_write(fifo, src, mq->elsize, 0);
+        if (mq->elsize != ret) {
+            av_log(NULL, AV_LOG_ERROR, "FIFO write (ret=%d) failed\n", ret);
+            break;
+        }
+    }
+
+    pthread_cond_signal(&mq->cond);
+    return 0;
+}
+
 #endif /* HAVE_THREADS */
 
 int av_thread_message_queue_send(AVThreadMessageQueue *mq,
@@ -154,6 +189,22 @@ int av_thread_message_queue_recv(AVThreadMessageQueue *mq,
 
     pthread_mutex_lock(&mq->lock);
     ret = av_thread_message_queue_recv_locked(mq, msg, flags);
+    pthread_mutex_unlock(&mq->lock);
+    return ret;
+#else
+    return AVERROR(ENOSYS);
+#endif /* HAVE_THREADS */
+}
+
+int av_thread_message_queue_peek(AVThreadMessageQueue *mq,
+                                 AVFifoBuffer *fifo,
+                                 unsigned flags)
+{
+#if HAVE_THREADS
+    int ret = 0;
+    av_log(NULL, AV_LOG_WARNING, "mq=%x\n", mq);
+    pthread_mutex_lock(&mq->lock);
+    ret = av_thread_message_queue_peek_locked(mq, fifo, flags);
     pthread_mutex_unlock(&mq->lock);
     return ret;
 #else

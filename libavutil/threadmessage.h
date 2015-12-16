@@ -67,6 +67,13 @@ int av_thread_message_queue_recv(AVThreadMessageQueue *mq,
                                  unsigned flags);
 
 /**
+ * Peek the msg queue and copy the msgs into fifo.
+ */
+int av_thread_message_queue_peek(AVThreadMessageQueue *mq,
+                                 AVFifoBuffer *fifo,
+                                 unsigned flags);
+
+/**
  * Set the sending error code.
  *
  * If the error code is set to non-zero, av_thread_message_queue_recv() will

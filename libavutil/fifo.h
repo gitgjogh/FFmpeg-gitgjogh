@@ -146,6 +146,22 @@ int av_fifo_grow(AVFifoBuffer *f, unsigned int additional_space);
 void av_fifo_drain(AVFifoBuffer *f, int size);
 
 /**
+ * Write data peek from src to dst. 
+ * @param size number of bytes mean to copy. The actual size copied is
+ *      FFMIN(av_fifo_space(src), av_fifo_size(src), size)
+ * This is done before data copy. So self copy should be fine.
+ */
+void av_fifo_peek_copy(AVFifoBuffer *dst, AVFifoBuffer *src, int size);
+
+/**
+ * Write data read from src to dst.
+ * @param size number of bytes mean to copy. The actual size copied is
+ *      FFMIN(av_fifo_space(src), av_fifo_size(src), size)
+ * This is done before data copy. So self copy should be fine.
+ */
+void av_fifo_read_copy(AVFifoBuffer *dst, AVFifoBuffer *src, int size);
+
+/**
  * Return a pointer to the data stored in a FIFO buffer at a certain offset.
  * The FIFO buffer is not modified.
  *

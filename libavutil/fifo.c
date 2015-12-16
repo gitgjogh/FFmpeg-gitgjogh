@@ -203,7 +203,78 @@ void av_fifo_drain(AVFifoBuffer *f, int size)
     f->rndx += size;
 }
 
+static int av_fifo_mcpy_peek(/*AVFifoBuffer **/ void *f, void *dest, int buf_size)
+{
+    buf_size = FFMIN(buf_size, av_fifo_size(f));
+    //printf("mcpy_peek %d\n", buf_size);
+    av_fifo_generic_peek(f, dest, buf_size, 0);
+    return buf_size;
+}
+
+static int av_fifo_mcpy_read(/*AVFifoBuffer**/ void *f, void *dest, int buf_size)
+{
+    buf_size = FFMIN(buf_size, av_fifo_size(f));
+    //printf("mcpy_read %d\n", buf_size);
+    av_fifo_generic_read(f, dest, buf_size, 0);
+    return buf_size;
+}
+
+void av_fifo_peek_copy(AVFifoBuffer *dst, AVFifoBuffer *src, int size)
+{
+    size = FFMIN(size, av_fifo_space(dst));
+    //printf("peek_copy %d\n", size);
+    av_fifo_generic_write(dst, src, size, av_fifo_mcpy_peek);
+}
+
+void av_fifo_read_copy(AVFifoBuffer *dst, AVFifoBuffer *src, int size)
+{
+    size = FFMIN(size, av_fifo_space(dst));
+    //printf("read_copy %d\n", size);
+    av_fifo_generic_write(dst, src, size, av_fifo_mcpy_read);
+}
+
+
 #ifdef TEST
+
+/**
+ * $ under ffmpeg/libavutil/
+ * cc -DTEST fifo.c -I ../ -L???/ffmpeg/libavutil/ -lavutil
+ */
+static int copy_test()
+{
+    /* create a FIFO buffer */
+    AVFifoBuffer *fifo1 = av_fifo_alloc(12 * sizeof(int));
+    AVFifoBuffer *fifo2 = av_fifo_alloc(12 * sizeof(int));
+    int i, j, n;
+
+    /* fill data */
+    for (i = 0; av_fifo_space(fifo1) >= sizeof(int); i++)
+        av_fifo_generic_write(fifo1, &i, sizeof(int), NULL);
+    for (i++; av_fifo_size(fifo2) < av_fifo_size(fifo1)/3; i++)
+        av_fifo_generic_write(fifo2, &i, sizeof(int), NULL);
+
+    av_fifo_peek_copy(fifo2, fifo1, av_fifo_size(fifo1)/3);
+    /* self copy should be fine */
+    av_fifo_read_copy(fifo2, fifo2, av_fifo_size(fifo1)/3);
+    av_fifo_peek_copy(fifo2, fifo1, av_fifo_size(fifo1)/3);
+        
+    printf("FIFO_1: ");
+    for (i = 0; av_fifo_size(fifo1) >= sizeof(int); i++) {
+        av_fifo_generic_read(fifo1, &j, sizeof(int), NULL);
+        printf("%2d ", j);
+    }
+    printf("\n");
+
+    printf("FIFO_2: ");
+    for (i = 0; av_fifo_size(fifo2) >= sizeof(int); i++) {
+        av_fifo_generic_read(fifo2, &j, sizeof(int), NULL);
+        printf("%2d ", j);
+    }
+    printf("\n");
+
+    av_fifo_free(fifo1);
+    av_fifo_free(fifo2);
+}
 
 int main(void)
 {
@@ -231,6 +302,9 @@ int main(void)
     printf("\n");
 
     av_fifo_free(fifo);
+
+    printf("\n\ncopy_test:\n");
+    copy_test();
 
     return 0;
 }

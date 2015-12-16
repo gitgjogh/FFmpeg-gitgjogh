@@ -1,0 +1,31 @@
+./configure \
+	--enable-gpl \
+	--enable-nonfree \
+	--enable-version3 \
+	--disable-shared \
+	--enable-static \
+	--enable-pthreads \
+	--disable-w32threads \
+	--arch=x86_64 \
+	--host-os=win64 \
+	--extra-cflags=-I/mingw/include \
+	--extra-cflags=-U__STRICT_ANSI__ \
+	--extra-ldflags=-L/mingw/lib \
+	--enable-memalign-hack \
+	--enable-libopencore-amrnb \
+	--enable-libopencore-amrwb \
+	--enable-libx264 \
+	--enable-libfdk-aac \
+	--enable-runtime-cpudetect \
+	--enable-libass \
+	--enable-libfreetype \
+	--enable-libfribidi \
+	--disable-doc \
+	--disable-ffserver \
+	--extra-libs='-Wl,--enable-auto-import' \
+	--extra-libs=-lenca \
+	--extra-libs=-liconv \
+	--extra-libs='-static -lexpat' \
+	--extra-libs=-ldbghelp \
+	--enable-libspeex \
+&& make -j4

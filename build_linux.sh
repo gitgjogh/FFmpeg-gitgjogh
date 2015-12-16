@@ -1,0 +1,25 @@
+./configure \
+	--enable-gpl \
+	--enable-nonfree \
+	--enable-version3 \
+	--enable-static \
+	--enable-pthreads \
+	--enable-memalign-hack \
+	--enable-libopencore-amrnb \
+	--enable-libopencore-amrwb \
+	--enable-libx264 \
+	--enable-libfdk-aac \
+	--enable-runtime-cpudetect \
+	--enable-libass \
+	--enable-libfreetype \
+	--disable-doc \
+	--disable-shared \
+	--disable-ffserver \
+	--disable-w32threads \
+	--extra-libs=-lpng \
+	--disable-devices \
+	--enable-indev=lavfi \
+	--extra-libs=-lexpat \
+	--extra-cflags=-U__STRICT_ANSI__ \
+	--enable-libspeex \
+&& make -j4

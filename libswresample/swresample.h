@@ -357,6 +357,15 @@ int64_t swr_next_pts(struct SwrContext *s, int64_t pts);
 int swr_set_compensation(struct SwrContext *s, int sample_delta, int compensation_distance);
 
 /**
+ * Disalbe "first_pts" option. Call this func after swr_init() but before any 
+ * swr_convert() if you want to draw back "first_pts" configuration.
+ *
+ * @param[in,out] s Initialized Swr context.
+ * @return old "first_pts" value
+ */
+int64_t swr_no_first_pts(struct SwrContext *s);
+
+/**
  * Set a customized input channel mapping.
  *
  * @param[in,out] s           allocated Swr context, not yet initialized

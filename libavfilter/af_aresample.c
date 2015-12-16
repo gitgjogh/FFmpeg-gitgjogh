@@ -77,6 +77,22 @@ static av_cold void uninit(AVFilterContext *ctx)
     swr_free(&aresample->swr);
 }
 
+static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
+                           char *res, int res_len, int flags)
+{
+
+    AResampleContext *aresample = ctx->priv;
+    int ret;
+
+    if (!strcmp(cmd, "no_first_pts")) {
+        int64_t pts = swr_no_first_pts(aresample->swr);
+        av_log(ctx, AV_LOG_DEBUG, "Set 'first_pts' from %lld to AV_NOPTS_VALUE\n", pts);
+        return ret;
+    } 
+
+    return AVERROR(ENOSYS);
+}
+
 static int query_formats(AVFilterContext *ctx)
 {
     AResampleContext *aresample = ctx->priv;
@@ -358,4 +374,5 @@ AVFilter ff_af_aresample = {
     .priv_class    = &aresample_class,
     .inputs        = aresample_inputs,
     .outputs       = aresample_outputs,
+    .process_command = process_command,
 };

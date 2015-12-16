@@ -2014,6 +2014,8 @@ static int decode_audio(InputStream *ist, AVPacket *pkt, int *got_output)
                     av_log(NULL, AV_LOG_FATAL, "Error reinitializing filters!\n");
                     exit_program(1);
                 }
+                av_log(NULL, AV_LOG_INFO, "send 'no_first_pts' cmd to 'aresample' filter\n");
+                avfilter_graph_send_command(fg->graph, "aresample", "no_first_pts", 0, 0, 0, 0);
             }
     }
 

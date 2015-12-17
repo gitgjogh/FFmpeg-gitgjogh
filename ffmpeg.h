@@ -337,6 +337,16 @@ typedef struct InputStream {
     uint64_t samples_decoded;
 } InputStream;
 
+
+typedef struct DtsHole {
+    int64_t start;
+    int64_t end;
+} DtsHole;
+
+#define MAX_PKT_LOOKAHEAD 8
+#define DTSHOLE_GROW_STEP 16
+#define MIN_DTSHOLE_IN_SECOND 1
+
 typedef struct InputFile {
     AVFormatContext *ctx;
     int eof_reached;      /* true if eof reached */
@@ -353,6 +363,10 @@ typedef struct InputFile {
     int nb_streams_warn;  /* number of streams that the user was warned of */
     int rate_emu;
     int accurate_seek;
+
+    AVFifoBuffer *pkts_lookahead;
+    AVFifoBuffer *future_dts_hole;
+    AVFifoBuffer *passed_dts_hole;
 
 #if HAVE_PTHREADS
     AVThreadMessageQueue *in_thread_queue;

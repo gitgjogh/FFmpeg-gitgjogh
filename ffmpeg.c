@@ -3582,29 +3582,6 @@ static int get_input_packet_mt(InputFile *f, AVPacket *pkt)
                                         f->non_blocking ?
                                         AV_THREAD_MESSAGE_NONBLOCK : 0);
 }
-
-
-static int peek_input_packet_for_dts_mt(InputFile *f, int64_t next_dts, int64_t pkt_dts)
-{
-    //av_thread_message_queue_alloc(&f->in_thread_queue, f->thread_queue_size, sizeof(AVPacket));
-    AVFifoBuffer *fifo = av_fifo_alloc(f->thread_queue_size * sizeof(AVPacket));
-    if (!fifo) {
-        av_log(NULL, AV_LOG_ERROR, "%s failed.\n", __FUNCTION__);
-        return AVERROR(-1);
-    }
-
-    av_log(NULL, AV_LOG_WARNING, "space=%d\n", av_fifo_space(fifo));
-
-    av_thread_message_queue_peek(f->in_thread_queue, fifo, 
-                                 f->non_blocking ? 
-                                 AV_THREAD_MESSAGE_NONBLOCK : 0);
-
-    av_log(NULL, AV_LOG_WARNING, "peek n=%d.\n", av_fifo_size(fifo));
-
-    av_fifo_freep(&fifo);
-
-    return 0;
-}
 #endif
 
 static int get_input_packet(InputFile *f, AVPacket *pkt)
@@ -3625,6 +3602,182 @@ static int get_input_packet(InputFile *f, AVPacket *pkt)
         return get_input_packet_mt(f, pkt);
 #endif
     return av_read_frame(f->ctx, pkt);
+}
+
+static void show_dtshole_lookahead(void)
+{
+    int i ,j;
+    
+    for (i=0; i<nb_input_files; i++) 
+    {
+        InputFile *f = input_files[i];
+        
+        if (f->passed_dts_hole) {
+            int n = av_fifo_size(f->passed_dts_hole);
+            for (j=0; j<n; j++) {
+                DtsHole *hole = (DtsHole *) av_fifo_peek2(f->passed_dts_hole, j*sizeof(DtsHole));
+                av_log(f->ctx, AV_LOG_INFO, "hole[<-%d]: %s~%s", j, 
+                        av_ts2timestr(hole->start, &AV_TIME_BASE_Q),
+                        av_ts2timestr(hole->end, &AV_TIME_BASE_Q));
+            }
+        }
+        
+        if (f->future_dts_hole) {
+            int n = av_fifo_size(f->future_dts_hole);
+            for (j=0; j<n; j++) {
+                DtsHole *hole = (DtsHole *) av_fifo_peek2(f->future_dts_hole, j*sizeof(DtsHole));
+                av_log(f->ctx, AV_LOG_INFO, "hole[->%d]: %s~%s", j, 
+                        av_ts2timestr(hole->start, &AV_TIME_BASE_Q),
+                        av_ts2timestr(hole->end, &AV_TIME_BASE_Q));
+            }
+        }
+    }
+}
+
+static void free_dtshole_lookahead(void)
+{
+    int i;
+    
+    for (i = 0; i < nb_input_files; i++) {
+        InputFile *f = input_files[i];
+        if (f->pkts_lookahead)  av_fifo_freep(&f->pkts_lookahead);
+        if (f->future_dts_hole) av_fifo_freep(&f->future_dts_hole);
+        if (f->passed_dts_hole) av_fifo_freep(&f->passed_dts_hole);
+    }
+}
+
+static int init_dtshole_lookahead(void)
+{
+    int i;
+
+    for (i = 0; i < nb_input_files; i++) {
+        InputFile *f = input_files[i];
+        f->pkts_lookahead  = av_fifo_alloc(MAX_PKT_LOOKAHEAD * sizeof(AVPacket));
+        f->future_dts_hole = av_fifo_alloc(DTSHOLE_GROW_STEP * sizeof(DtsHole));
+        f->passed_dts_hole = av_fifo_alloc(DTSHOLE_GROW_STEP * sizeof(DtsHole));
+        if (!f->pkts_lookahead || !f->future_dts_hole || !f->future_dts_hole) {
+            av_log(f->ctx, AV_LOG_ERROR, "init_dtshole_lookahead(%s%s%s) failed.\n",
+                    f->pkts_lookahead  ? "" : " dtshole_lookahead ", 
+                    f->future_dts_hole ? "" : " future_dts_hole ", 
+                    f->passed_dts_hole ? "" : " passed_dts_hole ");
+            free_dtshole_lookahead();
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int64_t pkt_dts_to_av_time_base(InputFile *ifile, AVPacket *pkt, int64_t shift)
+{
+    InputStream *ist = input_streams[ifile->ist_index + pkt->stream_index];
+    return av_rescale_q(pkt->dts+shift, ist->st->time_base, AV_TIME_BASE_Q);
+}
+
+static int dtshole_lookahead(InputFile *ifile, InputStream *cur_ist, AVPacket *cur_pkt)
+{
+    int ret, i, n;
+    DtsHole *other_streams_hole = 0;
+    DtsHole min_hole = {cur_ist->next_dts, cur_pkt->dts};
+    if (!ifile->pkts_lookahead && init_dtshole_lookahead()<0) {
+        av_log(ifile->ctx, AV_LOG_ERROR, "init_dtshole_lookahead() failed.\n");
+        return -1;
+    }
+    
+    n = i = av_fifo_size(ifile->pkts_lookahead)/sizeof(AVPacket);
+    av_log(ifile->ctx, AV_LOG_INFO, "ts_lookahead(before = %d).\n", i);
+
+    /* read lookahead packets */
+    while (i < MAX_PKT_LOOKAHEAD) {
+        AVPacket pkt;
+        ret = get_input_packet(ifile, &pkt);
+        if (ret == AVERROR(EAGAIN)) {
+            ifile->eagain = 1;
+            av_log(ifile->ctx, AV_LOG_INFO, "ts_lookahead(%d) AVERROR(EAGAIN).\n", i);
+            continue;
+        } 
+        if (ret < 0) {
+            if (ret != AVERROR_EOF) {
+                av_log(ifile->ctx, AV_LOG_ERROR, "ts_lookahead(%d) error reading.\n", i);
+                print_error(ifile->ctx->filename, ret);
+                if (exit_on_error)
+                    exit_program(1);
+            } else {
+                av_log(ifile->ctx, AV_LOG_INFO, "ts_lookahead(%d) EOF.\n", i);
+            }
+            break;
+        }
+        av_log(ifile->ctx, AV_LOG_DEBUG, "ts_lookahead(%d) %s\n", i, 
+                av_get_media_type_string(input_streams[ifile->ist_index + pkt.stream_index]->dec_ctx->codec_type));
+        av_fifo_generic_write(ifile->pkts_lookahead, &pkt, sizeof(AVPacket), 0);
+        i = av_fifo_size(ifile->pkts_lookahead)/sizeof(AVPacket);
+    }
+    
+    av_log(ifile->ctx, AV_LOG_INFO, "ts_lookahead(after = %d).\n", i);
+
+    other_streams_hole = av_mallocz(nb_input_streams * sizeof(DtsHole));
+    if (!other_streams_hole) {
+        av_log(ifile->ctx, AV_LOG_ERROR, "av_mallocz(hole) failed\n");
+        return -1;
+    }
+    
+    /* search other stream's first dtshole */
+    for (n=i, i=0; i<n; ++i) {
+        AVPacket *other_pkt = (AVPacket *) av_fifo_peek2(ifile->pkts_lookahead, i*sizeof(AVPacket));
+        InputStream *other_ist = input_streams[ifile->ist_index + other_pkt->stream_index];
+        DtsHole* other_hole = &other_streams_hole[ifile->ist_index + other_pkt->stream_index];
+        enum AVMediaType other_type = other_ist->dec_ctx->codec_type;
+        
+        if (other_pkt->stream_index != cur_pkt->stream_index && 
+           (other_type == AVMEDIA_TYPE_VIDEO || other_type == AVMEDIA_TYPE_AUDIO)) 
+        {
+            //int64_t other_dts = av_rescale_q(other_pkt->dts, other_ist->st->time_base, AV_TIME_BASE_Q);
+            //int64_t other_delta = other_dts - other_ist->next_dts;
+
+            /* hole has been found */
+            if (other_hole->end != 0) {
+                continue;
+            } 
+
+            /* other_hole->start store the pts for last pkt */
+            if (other_hole->start == 0) {
+                other_hole->start = other_ist->next_dts;
+            } 
+
+            // TODO: check duration ?
+            if (pkt_dts_to_av_time_base(ifile, other_pkt, 0) - other_hole->start > 1 * AV_TIME_BASE) {
+                other_hole->end = other_pkt->dts;
+            } else {
+                /* store the pts for last pkt */
+                other_hole->start = pkt_dts_to_av_time_base(ifile, other_pkt,other_pkt->duration);
+            }
+        }
+    }
+
+    /* minimize the dts hole */
+    for (i=0; i<nb_input_streams; ++i) {
+        DtsHole* other_hole = &other_streams_hole[i];
+        if (other_hole->end != 0) {
+            min_hole.start = FFMAX(other_hole->start, min_hole.start);
+            min_hole.end   = FFMIN(other_hole->end,   min_hole.end);
+        } 
+    }
+
+    av_freep(&other_streams_hole);
+
+    if (min_hole.end - min_hole.start > MIN_DTSHOLE_IN_SECOND * AV_TIME_BASE) {
+        av_log(ifile->ctx, AV_LOG_INFO, "got dtshole: %lld~%lld.\n", 
+                min_hole.start, min_hole.end);
+        if (av_fifo_space(ifile->future_dts_hole) < sizeof(DtsHole)) {
+            ret = av_fifo_grow(ifile->future_dts_hole, DTSHOLE_GROW_STEP * sizeof(DtsHole));
+            if (ret < 0) {
+                av_log(ifile->ctx, AV_LOG_ERROR, "av_fifo_grow(future_dts_holes failed\n");
+                return ret;
+            }
+        }
+        av_fifo_generic_write(ifile->future_dts_hole, &min_hole, sizeof(DtsHole), 0);
+    }
+            
+    return 0;
 }
 
 static int got_eagain(void)
@@ -3661,9 +3814,14 @@ static int process_input(int file_index)
     int ret, i, j;
 
     is  = ifile->ctx;
-    ret = get_input_packet(ifile, &pkt);
+
+    if (ifile->pkts_lookahead && av_fifo_size(ifile->pkts_lookahead))
+        ret = av_fifo_generic_read(ifile->pkts_lookahead, &pkt, sizeof(AVPacket), 0);
+    else
+        ret = get_input_packet(ifile, &pkt);
 
     if (ret == AVERROR(EAGAIN)) {
+        av_log(is, AV_LOG_WARNING, "AVERROR(EAGAIN)\n");
         ifile->eagain = 1;
         return ret;
     }
@@ -3819,6 +3977,16 @@ static int process_input(int file_index)
         !copy_ts) {
         int64_t pkt_dts = av_rescale_q(pkt.dts, ist->st->time_base, AV_TIME_BASE_Q);
         int64_t delta   = pkt_dts - ist->next_dts;
+
+        if (delta > MIN_DTSHOLE_IN_SECOND * AV_TIME_BASE) 
+        {
+            av_log(ifile->ctx, AV_LOG_ERROR, "(input) %d:%s delta=%lld at %lld.\n", 
+                    pkt.stream_index, av_get_media_type_string(ist->dec_ctx->codec_type),
+                    delta, ist->next_dts);
+            
+            dtshole_lookahead(ifile, ist, &pkt);
+        }
+        
         if (is->iformat->flags & AVFMT_TS_DISCONT) {
             if (delta < -1LL*dts_delta_threshold*AV_TIME_BASE ||
                 delta >  1LL*dts_delta_threshold*AV_TIME_BASE ||
@@ -4069,6 +4237,9 @@ static int transcode(void)
 #if HAVE_PTHREADS
     free_input_threads();
 #endif
+
+    show_dtshole_lookahead();
+    free_dtshole_lookahead();
 
     if (output_streams) {
         for (i = 0; i < nb_output_streams; i++) {

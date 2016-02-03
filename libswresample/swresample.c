@@ -916,10 +916,6 @@ int64_t swr_next_pts(struct SwrContext *s, int64_t pts){
         double fdelta = delta /(double)(s->in_sample_rate * (int64_t)s->out_sample_rate);
 
         if(fabs(fdelta) > s->min_compensation) {
-            av_log(s, AV_LOG_WARNING, 
-                "compensation: swr_next_pts:%lld, delta=%lld, fdelta=%f, outpts=%lld\n", 
-                pts, delta, fdelta, s->outpts);
-            
             if(s->outpts == s->firstpts || fabs(fdelta) > s->min_hard_compensation){
                 int ret;
                 if(delta > 0) ret = swr_inject_silence(s,  delta / s->out_sample_rate);
@@ -935,10 +931,6 @@ int64_t swr_next_pts(struct SwrContext *s, int64_t pts){
                 swr_set_compensation(s, comp, duration);
             }
         }
-
-        av_log(s, AV_LOG_DEBUG, 
-            "swr_next_pts:%lld, delta=%lld, fdelta=%f, outpts=%lld\n", 
-            pts, delta, fdelta, s->outpts);
 
         return s->outpts;
     }

@@ -3582,29 +3582,6 @@ static int get_input_packet_mt(InputFile *f, AVPacket *pkt)
                                         f->non_blocking ?
                                         AV_THREAD_MESSAGE_NONBLOCK : 0);
 }
-
-
-static int peek_input_packet_for_dts_mt(InputFile *f, int64_t next_dts, int64_t pkt_dts)
-{
-    //av_thread_message_queue_alloc(&f->in_thread_queue, f->thread_queue_size, sizeof(AVPacket));
-    AVFifoBuffer *fifo = av_fifo_alloc(f->thread_queue_size * sizeof(AVPacket));
-    if (!fifo) {
-        av_log(NULL, AV_LOG_ERROR, "%s failed.\n", __FUNCTION__);
-        return AVERROR(-1);
-    }
-
-    av_log(NULL, AV_LOG_WARNING, "space=%d\n", av_fifo_space(fifo));
-
-    av_thread_message_queue_peek(f->in_thread_queue, fifo, 
-                                 f->non_blocking ? 
-                                 AV_THREAD_MESSAGE_NONBLOCK : 0);
-
-    av_log(NULL, AV_LOG_WARNING, "peek n=%d.\n", av_fifo_size(fifo));
-
-    av_fifo_freep(&fifo);
-
-    return 0;
-}
 #endif
 
 static int get_input_packet(InputFile *f, AVPacket *pkt)
@@ -3795,56 +3772,49 @@ static int process_input(int file_index)
     if (pkt.dts != AV_NOPTS_VALUE)
         pkt.dts *= ist->ts_scale;
 
+    /* Compare to the file timeline */
     if ((ist->dec_ctx->codec_type == AVMEDIA_TYPE_VIDEO ||
          ist->dec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) &&
-        pkt.dts != AV_NOPTS_VALUE && ist->next_dts == AV_NOPTS_VALUE && !copy_ts
-        && (is->iformat->flags & AVFMT_TS_DISCONT) && ifile->last_ts != AV_NOPTS_VALUE) {
+        pkt.dts != AV_NOPTS_VALUE && !copy_ts 
+        //&& ist->next_dts != AV_NOPTS_VALUE
+        //&& (is->iformat->flags & AVFMT_TS_DISCONT)
+        && ifile->last_ts != AV_NOPTS_VALUE) 
+    {
         int64_t pkt_dts = av_rescale_q(pkt.dts, ist->st->time_base, AV_TIME_BASE_Q);
-        int64_t delta   = pkt_dts - ifile->last_ts;
-        if (delta < -1LL*dts_delta_threshold*AV_TIME_BASE ||
-            delta >  1LL*dts_delta_threshold*AV_TIME_BASE){
+        int64_t last_dur = AV_TIME_BASE/25;     /* FIXME */
+        int64_t delta   = pkt_dts - ifile->last_ts - last_dur;
+        if (delta < -1LL*global_dts_delta_threshold*AV_TIME_BASE ||
+            delta >  1LL*global_dts_delta_threshold*AV_TIME_BASE){
             ifile->ts_offset -= delta;
-            av_log(NULL, AV_LOG_DEBUG,
-                   "Inter stream timestamp discontinuity %"PRId64", new offset= %"PRId64"\n",
-                   delta, ifile->ts_offset);
+            if (ifile->ts_offset > -AV_TIME_BASE && ifile->ts_offset < AV_TIME_BASE) {
+                ifile->ts_offset = 0;           // suppose ts gap has been fixed after dither
+            }
+            av_log(NULL, AV_LOG_WARNING,
+                   "(%d:%s) Global timestamp discontinuity %"PRId64" at %"PRId64", new offset= %"PRId64"\n",
+                   ifile->ist_index + pkt.stream_index, av_get_media_type_string(ist->dec_ctx->codec_type),
+                   delta, ifile->last_ts, ifile->ts_offset);
             pkt.dts -= av_rescale_q(delta, AV_TIME_BASE_Q, ist->st->time_base);
             if (pkt.pts != AV_NOPTS_VALUE)
                 pkt.pts -= av_rescale_q(delta, AV_TIME_BASE_Q, ist->st->time_base);
         }
-    }
 
-    if ((ist->dec_ctx->codec_type == AVMEDIA_TYPE_VIDEO ||
-         ist->dec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) &&
-         pkt.dts != AV_NOPTS_VALUE && ist->next_dts != AV_NOPTS_VALUE &&
-        !copy_ts) {
-        int64_t pkt_dts = av_rescale_q(pkt.dts, ist->st->time_base, AV_TIME_BASE_Q);
-        int64_t delta   = pkt_dts - ist->next_dts;
-        if (is->iformat->flags & AVFMT_TS_DISCONT) {
+        /* Compare to the stream timeline. Just make warning, no adjust. */
+        if (ist->next_dts != AV_NOPTS_VALUE) {
+            int64_t pkt_dts = av_rescale_q(pkt.dts, ist->st->time_base, AV_TIME_BASE_Q);
+            int64_t delta   = pkt_dts - ist->next_dts;
+        
             if (delta < -1LL*dts_delta_threshold*AV_TIME_BASE ||
-                delta >  1LL*dts_delta_threshold*AV_TIME_BASE ||
-                pkt_dts + AV_TIME_BASE/10 < FFMAX(ist->pts, ist->dts)) {
-                ifile->ts_offset -= delta;
-                av_log(NULL, AV_LOG_DEBUG,
-                       "timestamp discontinuity %"PRId64", new offset= %"PRId64"\n",
-                       delta, ifile->ts_offset);
-                pkt.dts -= av_rescale_q(delta, AV_TIME_BASE_Q, ist->st->time_base);
-                if (pkt.pts != AV_NOPTS_VALUE)
-                    pkt.pts -= av_rescale_q(delta, AV_TIME_BASE_Q, ist->st->time_base);
+                delta >  1LL*dts_delta_threshold*AV_TIME_BASE ) {
+                av_log(NULL, AV_LOG_WARNING,
+                        "timestamp discontinuity %"PRId64", new offset= %"PRId64"\n",
+                        delta, ifile->ts_offset);
             }
-        } else {
+            
             if ( delta < -1LL*dts_error_threshold*AV_TIME_BASE ||
                  delta >  1LL*dts_error_threshold*AV_TIME_BASE) {
-                av_log(NULL, AV_LOG_WARNING, "DTS %"PRId64", next:%"PRId64" st:%d invalid dropping\n", pkt.dts, ist->next_dts, pkt.stream_index);
-                pkt.dts = AV_NOPTS_VALUE;
-            }
-            if (pkt.pts != AV_NOPTS_VALUE){
-                int64_t pkt_pts = av_rescale_q(pkt.pts, ist->st->time_base, AV_TIME_BASE_Q);
-                delta   = pkt_pts - ist->next_dts;
-                if ( delta < -1LL*dts_error_threshold*AV_TIME_BASE ||
-                     delta >  1LL*dts_error_threshold*AV_TIME_BASE) {
-                    av_log(NULL, AV_LOG_WARNING, "PTS %"PRId64", next:%"PRId64" invalid dropping st:%d\n", pkt.pts, ist->next_dts, pkt.stream_index);
-                    pkt.pts = AV_NOPTS_VALUE;
-                }
+                av_log(NULL, AV_LOG_ERROR, 
+                        "DTS %"PRId64", next:%"PRId64" st:%d invalid dropping\n", 
+                        pkt.dts, ist->next_dts, pkt.stream_index);
             }
         }
     }

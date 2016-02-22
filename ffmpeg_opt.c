@@ -88,6 +88,7 @@ char *sdp_filename;
 float audio_drift_threshold = 0.1;
 float dts_delta_threshold   = 10;
 float dts_error_threshold   = 3600*30;
+float global_dts_delta_threshold    = 4.9;
 
 int audio_volume      = 256;
 int audio_sync_method = 0;
@@ -3111,6 +3112,8 @@ const OptionDef options[] = {
         "timestamp discontinuity delta threshold", "threshold" },
     { "dts_error_threshold", HAS_ARG | OPT_FLOAT | OPT_EXPERT,       { &dts_error_threshold },
         "timestamp error delta threshold", "threshold" },
+    { "global_dts_delta_threshold", HAS_ARG | OPT_FLOAT | OPT_EXPERT,       { &global_dts_delta_threshold },
+        "threshold for global timestamp discontinuity delta to be erased", "threshold" },
     { "xerror",         OPT_BOOL | OPT_EXPERT,                       { &exit_on_error },
         "exit on error", "error" },
     { "copyinkf",       OPT_BOOL | OPT_EXPERT | OPT_SPEC |

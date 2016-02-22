@@ -2477,10 +2477,11 @@ fail:
             }
 
             avctx->frame_number++;
-            av_frame_set_best_effort_timestamp(picture,
-                                               guess_correct_pts(avctx,
-                                                                 picture->pkt_pts,
-                                                                 picture->pkt_dts));
+            if(picture->pkt_pts == AV_NOPTS_VALUE) {
+                av_frame_set_best_effort_timestamp(picture,picture->pkt_dts);
+            } else {
+                av_frame_set_best_effort_timestamp(picture,picture->pkt_pts);
+            }
         } else
             av_frame_unref(picture);
     } else

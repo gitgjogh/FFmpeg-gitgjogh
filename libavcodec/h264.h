@@ -503,7 +503,7 @@ typedef struct H264SliceContext {
      * Cabac
      */
     CABACContext cabac;
-    uint8_t cabac_state[1024];
+    uint8_t cabac_state[1024];      //<! cabac_state[ctxIdx] = 2 * pStateIdx[ctxIdx] + valMPS
     int cabac_init_idc;
 
     // rbsp buffer used for this slice

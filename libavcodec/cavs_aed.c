@@ -34,65 +34,11 @@
 #include "get_bits.h"
 #include "golomb.h"
 #include "cavs.h"
-#include "cavsae.h"
+#include "cavs_aed.h"
 //#include "cabac_functions.h"
 #include "internal.h"
 #include "mpeg12data.h"
 
-/**
- * number of bin by SyntaxElement.
- */
-av_unused static const int8_t num_bins_in_se[] = {
-     1, // sao_merge_flag
-     1, // sao_type_idx
-     0, // sao_eo_class
-     0, // sao_band_position
-     0, // sao_offset_abs
-     0, // sao_offset_sign
-     0, // end_of_slice_flag
-     3, // split_coding_unit_flag
-     1, // cu_transquant_bypass_flag
-     3, // skip_flag
-     3, // cu_qp_delta
-     1, // pred_mode
-     4, // part_mode
-     0, // pcm_flag
-     1, // prev_intra_luma_pred_mode
-     0, // mpm_idx
-     0, // rem_intra_luma_pred_mode
-     2, // intra_chroma_pred_mode
-     1, // merge_flag
-     1, // merge_idx
-     5, // inter_pred_idc
-     2, // ref_idx_l0
-     2, // ref_idx_l1
-     2, // abs_mvd_greater0_flag
-     2, // abs_mvd_greater1_flag
-     0, // abs_mvd_minus2
-     0, // mvd_sign_flag
-     1, // mvp_lx_flag
-     1, // no_residual_data_flag
-     3, // split_transform_flag
-     2, // cbf_luma
-     4, // cbf_cb, cbf_cr
-     2, // transform_skip_flag[][]
-     2, // explicit_rdpcm_flag[][]
-     2, // explicit_rdpcm_dir_flag[][]
-    18, // last_significant_coeff_x_prefix
-    18, // last_significant_coeff_y_prefix
-     0, // last_significant_coeff_x_suffix
-     0, // last_significant_coeff_y_suffix
-     4, // significant_coeff_group_flag
-    44, // significant_coeff_flag
-    24, // coeff_abs_level_greater1_flag
-     6, // coeff_abs_level_greater2_flag
-     0, // coeff_abs_level_remaining
-     0, // coeff_sign_flag
-     8, // log2_res_scale_abs
-     2, // res_scale_sign_flag
-     1, // cu_chroma_qp_offset_flag
-     1, // cu_chroma_qp_offset_idx
-};
 
 enum SyntaxElement {
     MB_SKIP_RUN = 0,
@@ -297,8 +243,7 @@ int ff_cavs_aed_mb_type_p(AVSContext *h, AEContext *c)
 {
     AEState *ctx = c->ae_state + OFST_OF_MB_TYPE;
     int binIdx = 0;
-    /* FIXME: (symbol[5] == 0) is stream error */
-    while (!cavs_aed_symbol(c, ctx) && binIdx<=5) {
+    while (!cavs_aed_symbol(c, ctx)) {
         ctx += (++binIdx <= 4);
     }
     return binIdx;
@@ -306,13 +251,20 @@ int ff_cavs_aed_mb_type_p(AVSContext *h, AEContext *c)
 
 int ff_cavs_aed_mb_type_b(AVSContext *h, AEContext *c)
 {
-    int a = (h->flags & A_AVAIL) && (modeA not in [P_SKIP, B_SKIP, B_DIRECT]);
-    int b = (h->flags & B_AVAIL) && (modeB not in [P_SKIP, B_SKIP, B_DIRECT]);
-    int ctxIdxInc = a+b;    // for binIdx==0
+    int a = (h->flags & A_AVAIL) && (h->left_type_B not in [P_SKIP, B_SKIP, B_DIRECT]);
+    int b = (h->flags & B_AVAIL) && (h->top_type_B[h->mbx] not in [P_SKIP, B_SKIP, B_DIRECT]);
     
-    AEState *ctx = c->ae_state + OFST_OF_MB_TYPE;
-    if (cavs_aed_symbol(c, ctx+ctxIdxInc)) {
+    AEState *ctx = c->ae_state + OFST_OF_MB_TYPE + a + b;
+    int binIdx = 0;
+    if (!cavs_aed_symbol(c, ctx)) {
+        return 0;
+    } 
+
+    *ctx = c->ae_state + OFST_OF_MB_TYPE + 7 + (binIdx = 1);
+    while (!cavs_aed_symbol(c, ctx)) {
+        ctx += (++binIdx <= 7);
     }
+    return binIdx;
 }
 
 int ff_cavs_aed_mb_part_type(AVSContext *h, AEContext *c)
@@ -345,8 +297,8 @@ int ff_cavs_aed_ipmode_luma(AVSContext *h, AEContext *c)
 
 int ff_cavs_aed_ipmode_chroma(AVSContext *h, AEContext *c)
 {
-    int a = (h->flags & A_AVAIL) && (h->pred_mode_C[2] != INTRA_C_LP);
-    int b = (h->flags & B_AVAIL) && (h->pred_mode_C[1] != INTRA_C_LP);
+    int a = (h->flags & A_AVAIL) && (h->left_pred_C != INTRA_C_LP);
+    int b = (h->flags & B_AVAIL) && (h->top_pred_C[h->mbx] != INTRA_C_LP);
     int ctxIdxInc = a+b;    // for binIdx==0
     
     /**   0   | 0

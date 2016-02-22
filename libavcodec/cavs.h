@@ -213,11 +213,11 @@ typedef struct AVSContext {
     int pred_mode_Y[3*3];
     int *top_pred_Y;
 
-    /** chroma pred mode cache
-       0:    --  B2
-       2:    A1  E        */
-    int pred_mode_C[2*2];
-    int *top_pred_C;      /* no ffmpeg extension, just use value 0~3;  */
+    int left_pred_C;
+    int *top_pred_C;         /* no ffmpeg extension, just use value 0~3 */
+
+    int left_type_B;
+    int *top_type_B;
     
     ptrdiff_t l_stride, c_stride;
     int luma_scan[4];

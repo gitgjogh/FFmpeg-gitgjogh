@@ -1096,8 +1096,10 @@ static int decode_pic(AVSContext *h)
                 skip_count = get_ue_golomb(&h->gb);
             if (h->skip_mode_flag && skip_count--) {
                 decode_mb_b(h, B_SKIP);
+                h->top_type_B[h->mbx] = h->left_type_B = B_SKIP;
             } else {
                 mb_type = get_ue_golomb(&h->gb) + B_SKIP + h->skip_mode_flag;
+                h->top_type_B[h->mbx] = h->left_type_B = mb_type;
                 if (mb_type > B_8X8)
                     decode_mb_i(h, mb_type - B_8X8 - 1);
                 else

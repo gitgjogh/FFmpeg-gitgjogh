@@ -368,6 +368,7 @@ void ff_cavs_modify_mb_i(AVSContext *h, int *pred_mode_uv)
     h->pred_mode_Y[6]             = h->pred_mode_Y[8];
     h->top_pred_Y[h->mbx * 2 + 0] = h->pred_mode_Y[7];
     h->top_pred_Y[h->mbx * 2 + 1] = h->pred_mode_Y[8];
+    h->top_pred_C[h->mbx]         = pred_mode_uv;
 
     /* modify pred modes according to availability of neighbour samples */
     if (!(h->flags & A_AVAIL)) {
@@ -640,6 +641,7 @@ void ff_cavs_init_mb(AVSContext *h)
     }
     h->pred_mode_Y[1] = h->top_pred_Y[h->mbx * 2 + 0];
     h->pred_mode_Y[2] = h->top_pred_Y[h->mbx * 2 + 1];
+    h->pred_mode_C[1] = h->top_pred_C[h->mbx];
     /* clear top predictors if MB B is not available */
     if (!(h->flags & B_AVAIL)) {
         h->mv[MV_FWD_B2]  = un_mv;
@@ -758,6 +760,7 @@ int ff_cavs_init_top_lines(AVSContext *h)
     h->top_mv[0]    = av_mallocz_array(h->mb_width * 2 + 1,  sizeof(cavs_vector));
     h->top_mv[1]    = av_mallocz_array(h->mb_width * 2 + 1,  sizeof(cavs_vector));
     h->top_pred_Y   = av_mallocz_array(h->mb_width * 2,  sizeof(*h->top_pred_Y));
+    h->top_pred_C   = av_mallocz_array(h->mb_width * 1,  sizeof(*h->top_pred_C));
     h->top_border_y = av_mallocz_array(h->mb_width + 1,  16);
     h->top_border_u = av_mallocz_array(h->mb_width,  10);
     h->top_border_v = av_mallocz_array(h->mb_width,  10);
@@ -768,13 +771,15 @@ int ff_cavs_init_top_lines(AVSContext *h)
     h->col_type_base = av_mallocz(h->mb_width * h->mb_height);
     h->block         = av_mallocz(64 * sizeof(int16_t));
 
-    if (!h->top_qp || !h->top_mv[0] || !h->top_mv[1] || !h->top_pred_Y ||
+    if (!h->top_qp || !h->top_mv[0] || !h->top_mv[1] || 
+        !h->top_pred_Y || !h->top_pred_C || 
         !h->top_border_y || !h->top_border_u || !h->top_border_v ||
         !h->col_mv || !h->col_type_base || !h->block) {
         av_freep(&h->top_qp);
         av_freep(&h->top_mv[0]);
         av_freep(&h->top_mv[1]);
         av_freep(&h->top_pred_Y);
+        av_freep(&h->top_pred_C);
         av_freep(&h->top_border_y);
         av_freep(&h->top_border_u);
         av_freep(&h->top_border_v);
@@ -844,6 +849,7 @@ av_cold int ff_cavs_end(AVCodecContext *avctx)
     av_freep(&h->top_mv[0]);
     av_freep(&h->top_mv[1]);
     av_freep(&h->top_pred_Y);
+    av_freep(&h->top_pred_C);
     av_freep(&h->top_border_y);
     av_freep(&h->top_border_u);
     av_freep(&h->top_border_v);

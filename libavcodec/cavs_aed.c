@@ -251,8 +251,10 @@ int ff_cavs_aed_mb_type_p(AVSContext *h, AEContext *c)
 
 int ff_cavs_aed_mb_type_b(AVSContext *h, AEContext *c)
 {
-    int a = (h->flags & A_AVAIL) && (h->left_type_B not in [P_SKIP, B_SKIP, B_DIRECT]);
-    int b = (h->flags & B_AVAIL) && (h->top_type_B[h->mbx] not in [P_SKIP, B_SKIP, B_DIRECT]);
+    int typeA = h->left_type_B;
+    int typeB = h->top_type_B[h->mbx];
+    int a = (h->flags & A_AVAIL) && !IS_SKIP(typeA) && !IS_DIRECT(typeA);
+    int b = (h->flags & B_AVAIL) && !IS_SKIP(typeB) && !IS_DIRECT(typeB);
     
     AEState *ctx = c->ae_state + OFST_OF_MB_TYPE + a + b;
     int binIdx = 0;
@@ -297,8 +299,10 @@ int ff_cavs_aed_ipmode_luma(AVSContext *h, AEContext *c)
 
 int ff_cavs_aed_ipmode_chroma(AVSContext *h, AEContext *c)
 {
-    int a = (h->flags & A_AVAIL) && (h->left_pred_C != INTRA_C_LP);
-    int b = (h->flags & B_AVAIL) && (h->top_pred_C[h->mbx] != INTRA_C_LP);
+    int modeA = h->pred_mode_C[1];
+    int modeB = h->pred_mode_C[3];
+    int a = (h->flags & A_AVAIL) && !IS_C_LP(modeA);
+    int b = (h->flags & B_AVAIL) && !IS_C_LP(modeB);
     int ctxIdxInc = a+b;    // for binIdx==0
     
     /**   0   | 0

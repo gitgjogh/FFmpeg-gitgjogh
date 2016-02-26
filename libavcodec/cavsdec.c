@@ -670,11 +670,12 @@ static int decode_mb_i(AVSContext *h, int cbp_code)
         h->pred_mode_Y[pos] = predpred;
     }
     pred_mode_uv = get_ue_golomb(gb);
-    if (pred_mode_uv > 6) {
-        av_log(h->avctx, AV_LOG_ERROR, "illegal intra chroma pred mode\n");
-        return AVERROR_INVALIDDATA;
+    h->pred_mode_C[4] = h->pred_mode_C7] = pred_mode_uv;
+    if (h->chroma_format == CAVS_YUV422) {
+        h->pred_mode_C[7] = get_ue_golomb(gb);
     }
-    ff_cavs_modify_mb_i(h, &pred_mode_uv);
+    ff_cavs_modify_mb_i(h);
+    pred_mode_uv = h->pred_mode_C[4]
 
     /* get coded block pattern */
     if (h->cur.f->pict_type == AV_PICTURE_TYPE_I)
@@ -1129,8 +1130,12 @@ static int decode_seq_header(AVSContext *h)
 
     h->profile = get_bits(&h->gb, 8);
     h->level   = get_bits(&h->gb, 8);
-    skip_bits1(&h->gb); //progressive sequence
-
+    h->b_progressive = get_bits1(&h->gb);
+    if (!h->b_progressive) {
+        avpriv_report_missing_feature(h->avctx, "Interlaced sequence in CAVS");
+        return AVERROR_PATCHWELCOME;
+    }
+    
     width  = get_bits(&h->gb, 14);
     height = get_bits(&h->gb, 14);
     if ((h->width || h->height) && (h->width != width || h->height != height)) {
@@ -1142,7 +1147,17 @@ static int decode_seq_header(AVSContext *h)
         av_log(h->avctx, AV_LOG_ERROR, "Dimensions invalid\n");
         return AVERROR_INVALIDDATA;
     }
-    skip_bits(&h->gb, 2); //chroma format
+    
+    h->chroma_format = get_bits(&h->gb, 2);
+    if (h->chroma_format != CAVS_YUV420 || h->chroma_format != CAVS_YUV422) {
+        av_log(h->avctx, AV_LOG_ERROR, "Invalid chroma_format\n");
+        return AVERROR_INVALIDDATA;
+    }
+    if (h->chroma_format != CAVS_YUV420) {
+        avpriv_report_missing_feature(h->avctx, "YUV422 in CAVS");
+        return AVERROR_PATCHWELCOME;
+    }
+    
     skip_bits(&h->gb, 3); //sample_precision
     h->aspect_ratio = get_bits(&h->gb, 4);
     frame_rate_code = get_bits(&h->gb, 4);
@@ -1152,9 +1167,10 @@ static int decode_seq_header(AVSContext *h)
         frame_rate_code = 1;
     }
 
-    skip_bits(&h->gb, 18); //bit_rate_lower
+    h->bitrate_max = get_bits(&h->gb, 18); //bit_rate_lower
     skip_bits1(&h->gb);    //marker_bit
-    skip_bits(&h->gb, 12); //bit_rate_upper
+    h->bitrate_max += (skip_bits(&h->gb, 12) << 18);
+    h->bitrate_max *= 400;
     h->low_delay =  get_bits1(&h->gb);
 
     ret = ff_set_dimensions(h->avctx, width, height);

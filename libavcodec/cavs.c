@@ -361,25 +361,30 @@ static inline void modify_pred(const int8_t *mod_table, int *mode)
     }
 }
 
-void ff_cavs_modify_mb_i(AVSContext *h, int *pred_mode_uv)
+void ff_cavs_modify_mb_i(AVSContext *h)
 {
     /* save pred modes before they get modified */
     h->pred_mode_Y[3]             = h->pred_mode_Y[5];
     h->pred_mode_Y[6]             = h->pred_mode_Y[8];
     h->top_pred_Y[h->mbx * 2 + 0] = h->pred_mode_Y[7];
     h->top_pred_Y[h->mbx * 2 + 1] = h->pred_mode_Y[8];
-    h->top_pred_C[h->mbx] = h->left_pred_C = pred_mode_uv;
+
+    h->pred_mode_C[3]             = h->pred_mode_C[4];
+    h->pred_mode_C[6]             = h->pred_mode_C[7];
+    h->top_pred_C[h->mbx]         = h->pred_mode_C[7];
 
     /* modify pred modes according to availability of neighbour samples */
     if (!(h->flags & A_AVAIL)) {
         modify_pred(left_modifier_l, &h->pred_mode_Y[4]);
         modify_pred(left_modifier_l, &h->pred_mode_Y[7]);
-        modify_pred(left_modifier_c, pred_mode_uv);
+        modify_pred(left_modifier_c, &h->pred_mode_C[4]);
+        modify_pred(left_modifier_c, &h->pred_mode_C[7]);
     }
     if (!(h->flags & B_AVAIL)) {
         modify_pred(top_modifier_l, &h->pred_mode_Y[4]);
         modify_pred(top_modifier_l, &h->pred_mode_Y[5]);
-        modify_pred(top_modifier_c, pred_mode_uv);
+        modify_pred(top_modifier_c, &h->pred_mode_C[4]);
+        modify_pred(top_modifier_c, &h->pred_mode_C[5]);
     }
 }
 
@@ -641,6 +646,7 @@ void ff_cavs_init_mb(AVSContext *h)
     }
     h->pred_mode_Y[1] = h->top_pred_Y[h->mbx * 2 + 0];
     h->pred_mode_Y[2] = h->top_pred_Y[h->mbx * 2 + 1];
+    h->pred_mode_C[1] = h->top_pred_C[h->mbx];
     /* clear top predictors if MB B is not available */
     if (!(h->flags & B_AVAIL)) {
         h->mv[MV_FWD_B2]  = un_mv;
@@ -648,6 +654,7 @@ void ff_cavs_init_mb(AVSContext *h)
         h->mv[MV_BWD_B2]  = un_mv;
         h->mv[MV_BWD_B3]  = un_mv;
         h->pred_mode_Y[1] = h->pred_mode_Y[2] = NOT_AVAIL;
+        h->pred_mode_C[1] = NOT_AVAIL;
         h->flags         &= ~(C_AVAIL | D_AVAIL);
     } else if (h->mbx) {
         h->flags |= D_AVAIL;

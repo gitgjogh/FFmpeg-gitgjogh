@@ -58,6 +58,17 @@
 #define MV_BWD_OFFS                     12
 #define MV_STRIDE                        4
 
+
+enum cavs_uvfmt {
+  CAVS_YUVRSV_0 = 0,
+  CAVS_YUV420,
+  CAVS_YUV422,
+  CAVS_YUVRSV_3
+};
+
+#define IS_SKIP(type)  ( (type) == P_SKIP || (type) == B_SKIP )
+#define IS_DIRECT(type)  ( (type) == B_DIRECT )
+
 enum cavs_mb {
   I_8X8 = 0,
   P_SKIP,
@@ -79,6 +90,15 @@ enum cavs_sub_mb {
   B_SUB_BWD,
   B_SUB_SYM
 };
+
+#define IS_L_LP(pred)  ( (pred) == INTRA_L_LP || \
+                         (pred) == INTRA_L_LP_LEFT || \
+                         (pred) == INTRA_L_LP_TOP || \
+                         (pred) == INTRA_L_DC_128 )
+#define IS_C_LP(pred)  ( (pred) == INTRA_C_LP || \
+                         (pred) == INTRA_C_LP_LEFT || \
+                         (pred) == INTRA_C_LP_TOP || \
+                         (pred) == INTRA_C_DC_128 )
 
 enum cavs_intra_luma {
   INTRA_L_VERT,
@@ -173,9 +193,12 @@ typedef struct AVSContext {
     int dist[2];     ///< temporal distances from current frame to ref frames
     int low_delay;
     int profile, level;
+    int b_progressive;      //<! For future use. Force progressive currently.
     int aspect_ratio;
     int mb_width, mb_height;
     int width, height;
+    int chroma_format;
+    int bitrate_max;
     int stream_revision; ///<0 for samples from 2006, 1 for rm52j encoder
     int progressive;
     int pic_structure;
@@ -212,9 +235,8 @@ typedef struct AVSContext {
        6:    A3  X2  X3   */
     int pred_mode_Y[3*3];
     int *top_pred_Y;
-
-    int left_pred_C;
-    int *top_pred_C;         /* no ffmpeg extension, just use value 0~3 */
+    int pred_mode_C[3*3];       //[0,2,5,8] not used
+    int *top_pred_C;
 
     int left_type_B;
     int *top_type_B;

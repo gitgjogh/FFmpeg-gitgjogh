@@ -1040,9 +1040,9 @@ static int decode_pic(AVSContext *h)
 
     if (h->low_delay)
         get_ue_golomb(&h->gb); //bbv_check_times
-    h->progressive   = get_bits1(&h->gb);
+    h->progressive_frame   = get_bits1(&h->gb);
     h->pic_structure = 1;
-    if (!h->progressive)
+    if (!h->progressive_frame)
         h->pic_structure = get_bits1(&h->gb);
     if (!h->pic_structure && h->stc == PIC_PB_START_CODE)
         skip_bits1(&h->gb);     //advanced_pred_mode_disable
@@ -1052,8 +1052,8 @@ static int decode_pic(AVSContext *h)
     h->qp_fixed = get_bits1(&h->gb);
     h->qp       = get_bits(&h->gb, 6);
     if (h->cur.f->pict_type == AV_PICTURE_TYPE_I) {
-        if (!h->progressive && !h->pic_structure)
-            skip_bits1(&h->gb);//what is this?
+        if (!h->progressive_frame && !h->pic_structure)
+            skip_bits1(&h->gb); //skip_mode_flag
         skip_bits(&h->gb, 4);   //reserved bits
     } else {
         if (!(h->cur.f->pict_type == AV_PICTURE_TYPE_B && h->pic_structure == 1))
@@ -1130,8 +1130,8 @@ static int decode_seq_header(AVSContext *h)
 
     h->profile = get_bits(&h->gb, 8);
     h->level   = get_bits(&h->gb, 8);
-    h->b_progressive = get_bits1(&h->gb);
-    if (!h->b_progressive) {
+    h->progressive_seq = get_bits1(&h->gb);
+    if (!h->progressive_seq) {
         avpriv_report_missing_feature(h->avctx, "Interlaced sequence in CAVS");
         return AVERROR_PATCHWELCOME;
     }

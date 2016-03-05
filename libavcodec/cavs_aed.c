@@ -262,7 +262,7 @@ int ff_cavs_aed_mb_type_b(AVSContext *h, AEContext *c)
         return 0;
     } 
 
-    *ctx = c->ae_state + OFST_OF_MB_TYPE + 7 + (binIdx = 1);
+    ctx = c->ae_state + OFST_OF_MB_TYPE + 7 + (binIdx = 1);
     while (!cavs_aed_symbol(c, ctx)) {
         ctx += (++binIdx <= 7);
     }
@@ -316,36 +316,181 @@ int ff_cavs_aed_ipmode_chroma(AVSContext *h, AEContext *c)
     int binIdx = 0;
     while (binIdx<=2 && cavs_aed_symbol(c, ctx + ctxIdxInc)) {
         ++ binIdx;
-        ctxIdxInc = 3;;
+        ctxIdxInc = 3;
     }
     return binIdx;
 }
 
 int ff_cavs_aed_mb_ref_idx_p(AVSContext *h, AEContext *c)
 {
+    int refA = ?;
+    int refB = ?;
+    int a = (h->flags & A_AVAIL) && (refA > 0);
+    int b = (h->flags & B_AVAIL) && (refB > 0);
     AEState *ctx = c->ae_state + OFST_OF_MB_REF_INDEX;
-    int binIdx = 0;
-    int nbit = 1 + h->field;
+    if (cavs_aed_symbol(c, ctx + a + 2*b)) {
+        return 0;
+    } 
+        
+    //int nbit = 1 + (!h->progressive_seq && h->pic_structure);
+    int binIdx = 1;
+    while (!cavs_aed_symbol(c, ctx + (binIdx==1 ? 4: 5))) {
+        ++binIdx;
+    }
+    return binIdx;
 }
 
 int ff_cavs_aed_mb_ref_idx_b(AVSContext *h, AEContext *c)
 {
+    int refA = ?;
+    int refB = ?;
+    int a = (h->flags & A_AVAIL) && (refA > 0);
+    int b = (h->flags & B_AVAIL) && (refB > 0);
+    AEState *ctx = c->ae_state + OFST_OF_MB_REF_INDEX;
+    return !cavs_aed_symbol(c, ctx + a + 2*b);
+}
+
+int ff_cavs_aed_mvd_abs(AVSContext *h, AEContext *c, AEState *ctx_base)
+{
+    if (!cavs_aed_symbol(ctx_base+3)) { return 1; }
+    if (!cavs_aed_symbol(ctx_base+4)) { return 2;}
+    int even = cavs_aed_symbol(ctx_base+5));
+    
+    int lzb = 0, code = 0;
+    while (!cavs_aed_bypass(c)) {
+        ++ lzb;
+    }
+    if (lzb) {
+        code = get_bits(c->pb, lzb);
+    }
+    return 3 + even + 2 * ((1<<lzb) - 1 + code);
 }
 
 int ff_cavs_aed_mvdx(AVSContext *h, AEContext *c)
 {
+    int mvda = ?
+    AEState *ctx = c->ae_state + OFST_OF_MV_DIFF_X;
+    if (!cavs_aed_symbol(c, ctx + (mvda>=2) + (mvda>=16))) {
+        return 0;
+    }
+    
+    int mvdAbs = ff_cavs_aed_mvd_abs(h, ctx);
+    int mvdSign = cavs_aed_bypass(c);
+    return cavs_aed_bypass(c) ? -mvdAbs : mvdAbs;
 }
 
 int ff_cavs_aed_mvdy(AVSContext *h, AEContext *c)
 {
+    int mvda = ?
+    AEState *ctx = c->ae_state + OFST_OF_MV_DIFF_Y;
+    if (!cavs_aed_symbol(c, ctx + (mvda>=2) + (mvda>=16))) {
+        return 0;
+    }
+    
+    int mvdAbs = ff_cavs_aed_mvd_abs(h, ctx);
+    int mvdSign = cavs_aed_bypass(c);
+    return cavs_aed_bypass(c) ? -mvdAbs : mvdAbs;
 }
 
 int ff_cavs_aed_cbp(AVSContext *h, AEContext *c)
 {
+    int cbpA = ?;
+    int cbpB = ?;
+    int a = (h->flags & A_AVAIL) && (cbpA > 0);
+    int b = (h->flags & B_AVAIL) && (cbpB > 0);
+    AEState *ctx = c->ae_state + OFST_OF_CBP + a + 2*b;
+    int cbp = 0, binIdx = 0;
+    for (; binIdx<4; ++binIdx) {
+        cbp = (cbp<<1) | cavs_aed_symbol(c, ctx);
+    }
+    
+    ctx = c->ae_state + OFST_OF_CBP + 4;
+    if (cavs_aed_symbol(c, ctx ++)) {
+        if (cavs_aed_symbol(c, ctx)) {              /* 11 */
+            return 48 + cbp;
+        } else {
+            if (cavs_aed_symbol(c, ctx)) {          /* 101 */
+                return 32 + cbp;
+            } else {                                /* 100 */
+                return 16 + cbp;
+            } 
+        }
+    } else 
+        return cbp;
+    }
+}
+
+int ff_cavs_aed_cbp_422(AVSContext *h, AEContext *c)
+{
+    return (cavs_aed_bypass(c) << 1) | cavs_aed_bypass(c);
 }
 
 int ff_cavs_aed_mb_qp_delta(AVSContext *h, AEContext *c)
 {
+    int prev_qp_delta = ?
+    AEState *ctx = c->ae_state + OFST_OF_MB_QP_DELTA;
+    if (cavs_aed_symbol(c, ctx + (prev_qp_delta!=0))) {
+        return 0;
+    } 
+    
+    int binIdx = 1;
+    while (!cavs_aed_symbol(c, ctx + (binIdx==1 ? 2: 3))) {
+        ++binIdx;
+    }
+    return binIdx;
+}
+
+/* end of block */
+int ff_cavs_aed_coeff_eob(AEContext *c, CoeffContext *trans)
+{
+    if (trans->lMax > 0) {
+        int priIdx = trans->priIdx;
+        //int secIdx = 0;
+        int ctxIdxInc  = priIdx * 3 - 1;
+        int ctxIdxIncW = 14 + ((trans->pos >> 5) * 16) + 
+                              ((trans->pos >> 1) & 0x0F);
+
+        return cavs_aed_symbolW(c, trans->stBase + ctxIdxInc, 
+                                   trans->stBase + ctxIdxIncW);
+    }
+
+    return 0;
+}
+
+int ff_cavs_aed_coeff_level(AEContext *c, CoeffContext *trans)
+{
+    int priIdx = trans->priIdx;
+    AEState *ctx = trans->stBase + priIdx * 3;
+    
+    int binIdx = 1;
+    while (!cavs_aed_symbol(c, ctx)) {
+        ctx += (++binIdx <= 2);
+    }
+
+    return (trans->level = binIdx);
+}
+
+int ff_cavs_aed_coeff_sign(AEContext *c)
+{
+    return cavs_aed_bypass(c);
+}
+
+int ff_cavs_aed_coeff_run(AEContext *c, CoeffContext *trans)
+{
+    int lMax = trans->lMax;
+    int priIdx = trans->priIdx;
+    AEState *ctx = trans->stBase + priIdx * 4;
+    ctx += (trans->level> 1) ? 2 : 0;
+    
+    int binIdx = 0;
+    while (!cavs_aed_symbol(c, ctx)) {
+        ctx += (++binIdx <= 1);
+    }
+
+    trans->lMax = lMax = FFMAX(lMax, trans->level);
+    trans->priIdx = (lMax >= 4) ? (4 - (lMax==4)) : lMax;
+
+    return binIdx;
 }
 
 int ff_cavs_aed_coeff_frame_luma(AVSContext *h, AEContext *c)
@@ -366,5 +511,7 @@ int ff_cavs_aed_coeff_field_chroma(AVSContext *h, AEContext *c)
 
 int ff_cavs_aed_weight_pred(AVSContext *h, AEContext *c)
 {
+    AEState *ctx = c->ae_state + OFST_OF_WEIGHT_PRED;
+    return cavs_aed_symbol(c, ctx);
 }
 

@@ -193,15 +193,15 @@ typedef struct AVSContext {
     int dist[2];     ///< temporal distances from current frame to ref frames
     int low_delay;
     int profile, level;
-    int b_progressive;      //<! For future use. Force progressive currently.
+    int progressive_seq;    ///< For future use. Force progressive currently.
     int aspect_ratio;
     int mb_width, mb_height;
     int width, height;
     int chroma_format;
     int bitrate_max;
     int stream_revision; ///<0 for samples from 2006, 1 for rm52j encoder
-    int progressive;
-    int pic_structure;
+    int progressive_frame;
+    int pic_structure;  ///< 0 - filed coding, 1 - frame coding
     int skip_mode_flag; ///< select between skip_count or one skip_flag per MB
     int loop_filter_disable;
     int alpha_offset, beta_offset;

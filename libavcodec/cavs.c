@@ -694,6 +694,8 @@ int ff_cavs_next_mb(AVSContext *h)
     h->top_mv[0][h->mbx * 2 + 1] = h->mv[MV_FWD_X3];
     h->top_mv[1][h->mbx * 2 + 0] = h->mv[MV_BWD_X2];
     h->top_mv[1][h->mbx * 2 + 1] = h->mv[MV_BWD_X3];
+    /* copy cbp */
+    h->top_cbp[h->mbx] = h->left_cbp = h->cbp;
     /* next MB address */
     h->mbidx++;
     h->mbx++;
@@ -768,6 +770,7 @@ int ff_cavs_init_top_lines(AVSContext *h)
     h->top_pred_Y   = av_mallocz_array(h->mb_width * 2,  sizeof(*h->top_pred_Y));
     h->top_pred_C   = av_mallocz_array(h->mb_width * 1,  sizeof(*h->top_pred_C));
     h->top_type_B   = av_mallocz_array(h->mb_width * 1,  sizeof(*h->top_type_B));
+    h->top_cbp      = av_mallocz_array(h->mb_width,      sizeof(*h->top_cbp));
     h->top_border_y = av_mallocz_array(h->mb_width + 1,  16);
     h->top_border_u = av_mallocz_array(h->mb_width,  10);
     h->top_border_v = av_mallocz_array(h->mb_width,  10);
@@ -788,6 +791,7 @@ int ff_cavs_init_top_lines(AVSContext *h)
         av_freep(&h->top_pred_Y);
         av_freep(&h->top_pred_C);
         av_freep(&h->top_type_B);
+        av_freep(&h->top_cbp);
         av_freep(&h->top_border_y);
         av_freep(&h->top_border_u);
         av_freep(&h->top_border_v);
@@ -859,6 +863,7 @@ av_cold int ff_cavs_end(AVCodecContext *avctx)
     av_freep(&h->top_pred_Y);
     av_freep(&h->top_pred_C);
     av_freep(&h->top_type_B);
+    av_freep(&h->top_cbp);
     av_freep(&h->top_border_y);
     av_freep(&h->top_border_u);
     av_freep(&h->top_border_v);

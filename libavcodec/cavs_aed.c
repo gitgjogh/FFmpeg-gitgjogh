@@ -321,12 +321,13 @@ int ff_cavs_aed_ipmode_chroma(AVSContext *h, AEContext *c)
     return binIdx;
 }
 
-int ff_cavs_aed_mb_ref_idx_p(AVSContext *h, AEContext *c)
+int ff_cavs_aed_mb_ref_idx_p(AVSContext *h, AEContext *c, enum cavs_mv_loc nP)
 {
-    int refA = ?;
-    int refB = ?;
-    int a = (h->flags & A_AVAIL) && (refA > 0);
-    int b = (h->flags & B_AVAIL) && (refB > 0);
+    cavs_vector *mvP = &h->mv[nP];
+    cavs_vector *mvA = &h->mv[nP-1];
+    cavs_vector *mvB = &h->mv[nP-4];
+    int a = (h->flags & A_AVAIL) && (mvA->ref > 0);
+    int b = (h->flags & B_AVAIL) && (mvB->ref > 0);
     AEState *ctx = c->ae_state + OFST_OF_MB_REF_INDEX;
     if (cavs_aed_symbol(c, ctx + a + 2*b)) {
         return 0;
@@ -340,12 +341,13 @@ int ff_cavs_aed_mb_ref_idx_p(AVSContext *h, AEContext *c)
     return binIdx;
 }
 
-int ff_cavs_aed_mb_ref_idx_b(AVSContext *h, AEContext *c)
+int ff_cavs_aed_mb_ref_idx_b_field(AVSContext *h, AEContext *c, enum cavs_mv_loc nP)
 {
-    int refA = ?;
-    int refB = ?;
-    int a = (h->flags & A_AVAIL) && (refA > 0);
-    int b = (h->flags & B_AVAIL) && (refB > 0);
+    cavs_vector *mvP = &h->mv[nP];
+    cavs_vector *mvA = &h->mv[nP-1];
+    cavs_vector *mvB = &h->mv[nP-4];
+    int a = (h->flags & A_AVAIL) && (mvA->ref > 0);
+    int b = (h->flags & B_AVAIL) && (mvB->ref > 0);
     AEState *ctx = c->ae_state + OFST_OF_MB_REF_INDEX;
     return !cavs_aed_symbol(c, ctx + a + 2*b);
 }
@@ -366,38 +368,42 @@ int ff_cavs_aed_mvd_abs(AVSContext *h, AEContext *c, AEState *ctx_base)
     return 3 + even + 2 * ((1<<lzb) - 1 + code);
 }
 
-int ff_cavs_aed_mvdx(AVSContext *h, AEContext *c)
+// results are saved in h->mv[nP].x/y/mvdAbs[]
+void ff_cavs_aed_mvd(AVSContext *h, AEContext *c, enum cavs_mv_loc nP)
 {
-    int mvda = ?
-    AEState *ctx = c->ae_state + OFST_OF_MV_DIFF_X;
-    if (!cavs_aed_symbol(c, ctx + (mvda>=2) + (mvda>=16))) {
-        return 0;
-    }
-    
-    int mvdAbs = ff_cavs_aed_mvd_abs(h, ctx);
-    int mvdSign = cavs_aed_bypass(c);
-    return cavs_aed_bypass(c) ? -mvdAbs : mvdAbs;
-}
+    cavs_vector *mvP = &h->mv[nP];
+    cavs_vector *mvA = &h->mv[nP-1];
 
-int ff_cavs_aed_mvdy(AVSContext *h, AEContext *c)
-{
-    int mvda = ?
-    AEState *ctx = c->ae_state + OFST_OF_MV_DIFF_Y;
-    if (!cavs_aed_symbol(c, ctx + (mvda>=2) + (mvda>=16))) {
-        return 0;
+    for (int i=0; i < 2; ++i) { 
+        int mvda = 0;
+        if (mvP->ref >= 0 && mvA->ref >= 0) {
+            mvda = mvA->mvdAbs[i];
+        }
+        if (nP >= MV_BWD_OFFS && (h->mv[nP-MV_BWD_OFFS].ref >= 0 || 
+                                  h->mv[nP-1-MV_BWD_OFFS].ref >= 0)) {
+            mvda = 0;
+        }
+
+        AEState *ctx = c->ae_state + (i==0 ? OFST_OF_MV_DIFF_X 
+                                           : OFST_OF_MV_DIFF_Y);
+        if (!cavs_aed_symbol(c, ctx + (mvda>=2) + (mvda>=16))) {
+            continue;   // mvd = 0
+        }
+        
+        int mvdAbs = ff_cavs_aed_mvd_abs(h, ctx);
+        int mvd = cavs_aed_bypass(c) ? -mvdAbs : mvdAbs;
+        mvP->mvdAbs[i] = mvdAbs;
+        mvP->x += (i==0 ? mvd : 0);
+        mvP->y += (i==1 ? mvd : 0);
     }
-    
-    int mvdAbs = ff_cavs_aed_mvd_abs(h, ctx);
-    int mvdSign = cavs_aed_bypass(c);
-    return cavs_aed_bypass(c) ? -mvdAbs : mvdAbs;
 }
 
 int ff_cavs_aed_cbp(AVSContext *h, AEContext *c)
 {
-    int cbpA = ?;
-    int cbpB = ?;
-    int a = (h->flags & A_AVAIL) && (cbpA > 0);
-    int b = (h->flags & B_AVAIL) && (cbpB > 0);
+    int cbpA = h->left_cbp;
+    int cbpB = h->top_cbp[h->mbx];
+    int a = (h->flags & A_AVAIL) && (cbpA & 0x10);
+    int b = (h->flags & B_AVAIL) && (cbpB & 0x04);
     AEState *ctx = c->ae_state + OFST_OF_CBP + a + 2*b;
     int cbp = 0, binIdx = 0;
     for (; binIdx<4; ++binIdx) {

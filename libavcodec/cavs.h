@@ -161,10 +161,13 @@ enum cavs_mv_loc {
 };
 
 DECLARE_ALIGNED(8, typedef, struct) {
-    int16_t x;
-    int16_t y;
+    union {
+        int16_t xy[2];
+        struct { int16_t x, y; };
+    }
     int16_t dist;
     int16_t ref;
+    int16_t mvdAbs[2];
 } cavs_vector;
 
 struct dec_2dvlc {
@@ -238,8 +241,13 @@ typedef struct AVSContext {
     int pred_mode_C[3*3];       //[0,2,5,8] not used
     int *top_pred_C;
 
+    /** mbtype cache for b-pred pic */
     int left_type_B;
     int *top_type_B;
+    
+    /** cbp cache */
+    int left_cbp;
+    int *top_cbp;
     
     ptrdiff_t l_stride, c_stride;
     int luma_scan[4];

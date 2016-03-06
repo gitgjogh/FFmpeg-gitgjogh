@@ -440,73 +440,87 @@ int ff_cavs_aed_mb_qp_delta(AVSContext *h, AEContext *c)
     return binIdx;
 }
 
-/* end of block */
-int ff_cavs_aed_coeff_eob(AEContext *c, CoeffContext *trans)
+/**
+ * decode coefficients from one 8x8 block, dequantize, inverse transform
+ *  and add them to sample block
+ * @param dst location of sample block
+ * @param stride line stride in frame buffer
+ */
+int ff_cavs_aed_coeff_block(AVSContext *h, AEContext *c, AEState *ctxBase, 
+                           int16_t levels[65], uint8_t runs[65])
 {
-    if (trans->lMax > 0) {
-        int priIdx = trans->priIdx;
-        //int secIdx = 0;
-        int ctxIdxInc  = priIdx * 3 - 1;
-        int ctxIdxIncW = 14 + ((trans->pos >> 5) * 16) + 
-                              ((trans->pos >> 1) & 0x0F);
+    AEState *ctx;
+    int i, level, sign, run;
+    int pos=0, lMax=0, priIdx=0;
+    
+    for (i = 0; i < 65; i++) 
+    {
+        /* eob */
+        if (lMax > 0) {
+            int ctxInc  = priIdx * 3 - 1;
+            int ctxIncW = 14 + (pos >> 5) * 16) + (pos >> 1) & 0x0F);
+            if (cavs_aed_symbolW(c, ctxBase + ctxInc, ctxBase + ctxIncW)) {
+                break;
+            }
+        }
 
-        return cavs_aed_symbolW(c, trans->stBase + ctxIdxInc, 
-                                   trans->stBase + ctxIdxIncW);
+        /* level */
+        level = 1;
+        ctx = ctxBase + priIdx * 3;
+        while (!cavs_aed_symbol(c, ctx)) {
+            ctx += (++level <= 2);
+        }
+
+        /* sign */
+        int sign = cavs_aed_bypass(c);
+        
+        /* run */
+        run = 0;
+        ctx = ctxBase + 46 + priIdx * 4;
+        ctx += (level > 1) ? 2 : 0;
+        while (!cavs_aed_symbol(c, ctx)) {
+            ctx += (++run <= 1);
+        }
+
+        /* save */
+        levels[i] = sign ? -level : level;
+        runs[i]   = run;
+
+        /* update */
+        lMax = FFMAX(lMax, level);
+        priIdx = (lMax >= 4) ? (4 - (lMax==4)) : lMax;
+        pos += (run+1);
     }
 
     return 0;
 }
 
-int ff_cavs_aed_coeff_level(AEContext *c, CoeffContext *trans)
+int ff_cavs_aed_coeff_frame_luma(AVSContext *h, AEContext *c, 
+                                 int16_t levels[65], uint8_t runs[65])
 {
-    int priIdx = trans->priIdx;
-    AEState *ctx = trans->stBase + priIdx * 3;
-    
-    int binIdx = 1;
-    while (!cavs_aed_symbol(c, ctx)) {
-        ctx += (++binIdx <= 2);
-    }
-
-    return (trans->level = binIdx);
+    return ff_cavs_aed_coeff_block(h, c, c->ae_state + OFST_OF_FRAME_LUMA, 
+                                   levels, runs);
 }
 
-int ff_cavs_aed_coeff_sign(AEContext *c)
+int ff_cavs_aed_coeff_frame_chroma(AVSContext *h, AEContext *c, 
+                                 int16_t levels[65], uint8_t runs[65])
 {
-    return cavs_aed_bypass(c);
+    return ff_cavs_aed_coeff_block(h, c, c->ae_state + OFST_OF_FRAME_CHROMA, 
+                                   levels, runs);
 }
 
-int ff_cavs_aed_coeff_run(AEContext *c, CoeffContext *trans)
+int ff_cavs_aed_coeff_field_luma(AVSContext *h, AEContext *c, 
+                                 int16_t levels[65], uint8_t runs[65])
 {
-    int lMax = trans->lMax;
-    int priIdx = trans->priIdx;
-    AEState *ctx = trans->stBase + priIdx * 4;
-    ctx += (trans->level> 1) ? 2 : 0;
-    
-    int binIdx = 0;
-    while (!cavs_aed_symbol(c, ctx)) {
-        ctx += (++binIdx <= 1);
-    }
-
-    trans->lMax = lMax = FFMAX(lMax, trans->level);
-    trans->priIdx = (lMax >= 4) ? (4 - (lMax==4)) : lMax;
-
-    return binIdx;
+    return ff_cavs_aed_coeff_block(h, c, c->ae_state + OFST_OF_FIELD_LUMA, 
+                                   levels, runs);
 }
 
-int ff_cavs_aed_coeff_frame_luma(AVSContext *h, AEContext *c)
+int ff_cavs_aed_coeff_field_chroma(AVSContext *h, AEContext *c, 
+                                 int16_t levels[65], uint8_t runs[65])
 {
-}
-
-int ff_cavs_aed_coeff_frame_chroma(AVSContext *h, AEContext *c)
-{
-}
-
-int ff_cavs_aed_coeff_field_luma(AVSContext *h, AEContext *c)
-{
-}
-
-int ff_cavs_aed_coeff_field_chroma(AVSContext *h, AEContext *c)
-{
+    return ff_cavs_aed_coeff_block(h, c, c->ae_state + OFST_OF_FIELD_CHROMA, 
+                                   levels, runs);
 }
 
 int ff_cavs_aed_weight_pred(AVSContext *h, AEContext *c)

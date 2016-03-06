@@ -61,11 +61,6 @@ typedef struct AEContext{
     GetBitContext pb;
 } AEContext;
 
-typedef struct CoeffContext{
-    AEState *stBase;
-    int pos, lMax, priIdx, level;
-} CoeffContext;
-
 int ff_init_cavsae_decoder(AEContext *c, const uint8_t *buf, int buf_size);
 
 #endif /* AVCODEC_CAVSAE_H */

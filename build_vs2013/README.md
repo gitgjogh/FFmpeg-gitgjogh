@@ -1,15 +1,16 @@
-
-BUILD FFMPEG UNDER VC2013 
+DEBUG FFMPEG USING VS2013
 =========================
 
-## build libav*** using MSVC compiler
+You need at least VS2013 update 2 to compile x264.
 
-### import vcvar into msys
+## Build Libav*** Using MSVC Compiler Under MINGW32
 
-- **Scheme#1:**  From `Start Menu`->`vs2013`->`tools`->`VS2013 x86 本机工具命令提示` start `msys.bat`.  
+### Import `vcvar` Into MSYS (MINGW32)
+
+- **Scheme#1:**  From `Start Menu`->`vs2013`->`tools`->`VS2013 x86 本机工具命令提示` start `msys.bat` binding with `mingw32`. (Don't use `mingw64`) 
 - **Scheme#2:**  Add `call "C:/Program Files/Microsoft Visual Studio 12.0/VC/vcvarsall.bat"` to the 1st line of `msys.bat`. Then kick off `msys.bat`. 
 
-**confirm vcvar has been imported**  
+Confirm `vcvar` has been imported:  
 
     $ which link nmake  
     /c/Program Files (x86)/Microsoft Visual Studio 12.0/VC/BIN/link.exe  
@@ -17,7 +18,7 @@ BUILD FFMPEG UNDER VC2013
 
 `nmake` is the make programe under MSVC. Needed for making `zlib`. See later.
 
-### fix collision between `VC-link` and `MSYS-LINK`
+### Fix Collision Between `VC-link` And `MSYS-LINK`
 
 - `VC-link` links obj/libs files to create exe/dll file
 - `MSYS-LINK` creates a link named FILE2 to an existing FILE1.
@@ -26,13 +27,19 @@ It is possible that `msys's file linker` or `coreutils's linker` conflicts with 
 
 ### Yasm
 
+### X264
+
+Go to an `x264` source tree 
+
+	> CC=cl $ ./configure --prefix='/c/Program Files (x86)/Microsoft Visual Studio 12.0/VC/' --enable-static --disable-gpl --enable-debug --enable-win32thread
+	> $ make && make install
+
 ### Zlib
 
 - `$ cd zlib-1.2.8`
 - Edit `win32/Makefile.msc` so that `CFLAGS` uses `-MT` instead of `-MD`, since this is how FFmpeg is built as well.  
     > del CFLAGS  = -nologo -MD -W3 -O2 -Oy--Zi -Fd"zlib" $(LOC)  
     > add CFLAGS  = -nologo -MT -W3 -O2 -Oy -Zi -Fd"zlib" $(LOC)  
-
 - Edit `zconf.h` and remove its inclusion of `unistd.h`. This gets erroneously included when building FFmpeg.   
 - `$ nmake -f win32/Makefile.msc`
 - Move `zlib.lib`, `zconf.h` and 	zlib.h	 to somewhere MSVC can see.   
@@ -41,29 +48,32 @@ It is possible that `msys's file linker` or `coreutils's linker` conflicts with 
 
 **reference:** <http://www.ffmpeg.org/platform.html> 
 
-### build ffmpeg libs
+### Build FFmpeg Libs Using `msvc` Toolchain 
 
-    > $ ./configure --prefix=${FFMPEG_DIST} --toolchain=msvc --enable-avresample  
+under `build_vs2013`:  
+
+	> $ madir build && cd build  
+    > $ ../../configure --prefix=`pwd`/.. --toolchain=msvc --disable-shared --enable-static --enable-libx264 --enable-gpl --extra-cflags=-I/mingw/include --extra-ldflags=-L/mingw/lib 
     > $ make --debug | tee make.log  
     > $ make install  
 
 
-## create win32 cmdl project
+## Create Win32 Console App. Project
 
-Add the following files to the proj:  
+Add the following files to the project:  
 
-		cmdutils.h cmdutils_common_opt.h config.h ffmpeg.h  
+		cmdutils.h cmdutils_common_opt.h build/config.h ffmpeg.h  
 		cmdutils.c ffmpeg.c ffmpeg_dxva2.cffmpeg_filter.c ffmpeg_opt.c  
 
 **Clue:** Run `grep "^CC" make.log` to see what files are compiled.
 
-### add dependency
+### Add Dependency
 
-- Additional Include Directories:  `${FFMPEG_DIST}\include`  
-- Additional Library Directories: `${FFMPEG_DIST}\lib`  
+- Additional Include Directories: `include;build`  
+- Additional Library Directories: `lib`  
 - Additional Dependent Libraries:   `vfw32.lib;user32.lib;gdi32.lib;psapi.lib;ole32.lib;strmiids.lib;uuid.lib;oleaut32.lib;shlwapi.lib;advapi32.lib;shell32.lib;libavdevice.a;libavfilter.a;libswscale.a;libavformat.a;libavcodec.a;libswresample.a;libavutil.a;`    
 
-**Clue#1:** Run `env PKG_CONFIG_PATH=${FFMPEG_DIST}/lib/pkgconfig/ pkg-config --libs libavdevice` to see what additional libs need to be added. For example, my result is:  
+**Clue#1:** Under `build_vs2013`, run `env PKG_CONFIG_PATH=lib/pkgconfig/ pkg-config --libs libavdevice` to see what additional libs need to be added. For example, my result is:  
 
 		vfw32.lib user32.lib gdi32.lib psapi.lib ole32.lib strmiids.lib uuid.lib oleaut32.lib shlwapi.lib ws2_32.lib advapi32.lib shell32.lib -Ld:/repo/ffmpeg_vs2013/ffmpeg_dev/lib -lavdevice -lavfilter -lswscale -lavresample -lavformat -lavcodec -lswresample -lavutil
 
@@ -79,7 +89,7 @@ Add the following files to the proj:
 		FFLIBS-$(CONFIG_SWRESAMPLE) += swresample
 		FFLIBS-$(CONFIG_SWSCALE)    += swscale
 
-### set preprocessor #
+### Set Preprocessor #
 
 	-D_ISOC99_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -Dstrtod=avpriv_strtod -Dsnprintf=avpriv_snprintf -D_snprintf=avpriv_snprintf -Dvsnprintf=avpriv_vsnprintf -D_WIN32_WINNT=0x0502 -nologo -D_USE_MATH_DEFINES -D_CRT_SECURE_NO_WARNINGS -Dinline=__inline -FIstdlib.h -Dstrtoll=_strtoi64
 
@@ -91,7 +101,7 @@ Add the following files to the proj:
 
 ## Problems
 
-### fix collision between `LIBCMT.lib` and `msvcrtd.lib`
+### Fix Collision Between `LIBCMT.lib` and `msvcrtd.lib`
 
 	1>------ 已启动生成:  项目: build_vs2013, 配置: Debug Win32 ------  
 	1>LIBCMT.lib(open.obj) : error LNK2005: __sopen 已经在 MSVCRT.lib(MSVCR120.dll) 中定义  
@@ -104,7 +114,7 @@ solution: set msvcr to /MT in "properties->C/C++->Code generation"
 **reference:** <https://msdn.microsoft.com/en-us/library/2kzt1wy3%28v=VS.71%29.aspx>
 
 	
-### undefined reference to 'avresample_version', 'postproc_version' #
+### Undefined Reference To 'avresample_version', 'postproc_version'
 
 two scheme:  
 
@@ -113,15 +123,6 @@ two scheme:
 	    // PRINT_LIB_INFO(postproc, POSTPROC, flags, level);
 	2) configure --enable-avresample
 
-### network module
+### Network Module
 
 which has to link to the WINDOWS SDK, so be careful with how '_WIN32_WINNT' defined in 'config.mak' or 'config.log', copied it to the VC preprocessors. Reference to the "set preprocessor" section
-
-### ERROR: libx264 not found
-
-$ cd ../x264
-$ ./configure --prefix=/mingw --enable-static --disable-gpl --enable-debug --enable-win32thread
-
-$ ../ffmpeg/configure --toolchain=msvc --disable-shared --enable-static --enable-libx264 --enable-gpl --extra-cflags=-I/mingw/include --extra-ldflags=-L/mingw/lib
-
-Copy the CFLAGS to MSVC preprocessors. This scheme make things easier that solution#1.

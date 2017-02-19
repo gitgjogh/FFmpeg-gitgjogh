@@ -192,6 +192,8 @@ void avfilter_register_all(void)
     REGISTER_FILTER(NULL,           null,           vf);
     REGISTER_FILTER(OCV,            ocv,            vf);
     REGISTER_FILTER(OVERLAY,        overlay,        vf);
+    REGISTER_FILTER(DRMEMB,         drmEmb,         vf);
+    REGISTER_FILTER(DRMDEC,         drmDec,         vf);
     REGISTER_FILTER(OWDENOISE,      owdenoise,      vf);
     REGISTER_FILTER(PAD,            pad,            vf);
     REGISTER_FILTER(PALETTEGEN,     palettegen,     vf);

@@ -179,6 +179,7 @@ OBJS-$(CONFIG_OPENCL)                        += deshake_opencl.o unsharp_opencl.
 OBJS-$(CONFIG_OVERLAY_FILTER)                += vf_overlay.o dualinput.o framesync.o
 OBJS-$(CONFIG_DRMEMB_FILTER)                 += vf_drm.o vf_drmEmb.o dualinput.o framesync.o
 OBJS-$(CONFIG_DRMDEC_FILTER)                 += vf_drm.o vf_drmDec.o
+OBJS-$(CONFIG_DEFOG_FILTER)                  += vf_guidefilter.o vf_defog.o
 OBJS-$(CONFIG_OWDENOISE_FILTER)              += vf_owdenoise.o
 OBJS-$(CONFIG_PAD_FILTER)                    += vf_pad.o
 OBJS-$(CONFIG_PALETTEGEN_FILTER)             += vf_palettegen.o
